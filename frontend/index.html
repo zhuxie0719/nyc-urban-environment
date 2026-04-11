@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>纽约城市环境 · 交互探索 | NYC Urban Environment</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <p class="eyebrow">NYC Urban Environment · Interactive Explorer</p>
+        <h1>纽约城市环境：交互式一览</h1>
+        <p class="subtitle">
+          为正在了解纽约的你准备：用地图快速感受各纽约各区（按邮政编码划分）在<strong>空气</strong>、<strong>安静程度</strong>与<strong>绿荫</strong>上的相对表现，并用自己的筛选条件探索「哪里更符合你对城市环境的想象」。
+        </p>
+        <aside class="doc-spotlight" aria-label="说明文档入口">
+          <p class="doc-spotlight-copy">
+            <strong>说明文档</strong>：设计思路、指标口径、外部资源与开发过程已单独成页，便于对照作业要求阅读。
+          </p>
+          <a class="doc-spotlight-btn" href="./submission.html">打开《说明文档》</a>
+        </aside>
+        <nav class="toc" aria-label="页面目录">
+          <span class="toc-label">本页导读</span>
+          <a href="#section-intro">1. 这份地图能回答什么</a>
+          <a href="#section-data">2. 数据从哪来</a>
+          <a href="#section-explore">3. 如何交互探索</a>
+          <a href="#section-map">4. 地图与雷达图</a>
+          <a href="#section-findings">5. 数据速览</a>
+          <a class="toc-doc" href="./submission.html">提交说明文档</a>
+        </nav>
+        <div class="hero-grid">
+          <div class="hero-item">
+            <span class="k">你想了解的是</span>
+            <strong>各区环境哪里更舒心？短板是空气、噪音还是绿化？</strong>
+          </div>
+          <div class="hero-item">
+            <span class="k">背后数据</span>
+            <strong>空气质量 · 311 噪音相关诉求 · 绿化普查</strong>
+          </div>
+          <div class="hero-item">
+            <span class="k">阅读方式</span>
+            <strong>颜色体现综合环境分；右侧雷达为细项指标对比</strong>
+          </div>
+        </div>
+      </header>
+
+      <section id="section-intro" class="panel prose">
+        <h2>1. 这份地图能回答什么</h2>
+        <p class="lead" id="questionText">
+          若你关心纽约的<strong>「呼吸感、安静度、绿意」</strong>，可以把本页当作起点：<br>
+          在地图上比较不同区域的整体环境得分，再用筛选器逐步收紧条件，看是哪些维度在拉高或拉低分数。
+        </p>
+      </section>
+
+      <section id="section-data" class="panel prose">
+        <h2>2. 数据从哪来</h2>
+        <p id="methodText">
+          本页指标来自下列三个 Kaggle 公开数据集；在本地清洗后对齐到邮政编码，将<strong>空气质量</strong></strong>、与<strong>噪音相关的 311 服务请求</strong>、以及<strong>街道树木普查</strong>分别标准化为 0–100 分，再加权合成<strong>环境综合分</strong>（分数越高表示在该维度组合下相对更理想，便于横向比较，而非绝对医学结论）。
+        </p>
+        <ul class="data-source-list" aria-label="Kaggle 数据集来源">
+          <li>
+            <strong>空气质量（Air）</strong>：
+            <a
+              href="https://www.kaggle.com/datasets/kaggleprollc/air-quality-data-nyc"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Air Quality Data NYC</a
+            >
+            <span class="data-source-meta">（发布方：kaggleprollc）</span>
+          </li>
+          <li>
+            <strong>311 市民服务请求（Noise 相关维度）</strong>：
+            <a
+              href="https://www.kaggle.com/datasets/shubhammore12/nyc-311-customer-service-requests-analysis?resource=download"
+              target="_blank"
+              rel="noopener noreferrer"
+              >NYC 311 Customer Service Requests Analysis</a
+            >
+            <span class="data-source-meta">（发布方：shubhammore12）</span>
+          </li>
+          <li>
+            <strong>树木普查（Green）</strong>：
+            <a href="https://www.kaggle.com/datasets/nycparks/tree-census" target="_blank" rel="noopener noreferrer"
+              >NYC Parks Tree Census</a
+            >
+            <span class="data-source-meta">（发布方：nycparks）</span>
+          </li>
+        </ul>
+        <p class="data-source-note">
+          地图底图来自 OpenStreetMap。
+        </p>
+      </section>
+
+      <section id="section-explore" class="controls panel">
+        <div class="controls-head">
+          <h2>3. 自定义你的探索</h2>
+          <p class="controls-desc">
+            类似数据新闻中的「过滤器」：先设一个综合分底线，再按需勾选「空气更好 / 更安静 / 绿荫更多」，地图上不符合的组合会变淡，方便你聚焦候选区域。
+          </p>
+        </div>
+        <div class="controls-row">
+          <label class="control-item control-slider">
+            <span class="control-label">只显示综合分不低于</span>
+            <input id="scoreRange" type="range" min="0" max="100" value="30" step="1" />
+            <strong id="scoreLabel" class="score-badge">30</strong>
+          </label>
+          <div class="controls-chips" role="group" aria-label="附加筛选条件">
+            <label class="control-item chip">
+              <input id="airCheck" type="checkbox" />
+              <span>同时要求：空气质量较好（≥ 60）</span>
+            </label>
+            <label class="control-item chip">
+              <input id="noiseCheck" type="checkbox" />
+              <span>同时要求：相对更安静（≥ 60）</span>
+            </label>
+            <label class="control-item chip">
+              <input id="greenCheck" type="checkbox" />
+              <span>同时要求：绿荫相对更丰富（≥ 60）</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <main class="content" id="section-map">
+        <div class="map-wrap panel">
+          <div class="map-head">
+            <h2>4. 邮政编码区域环境综合分分布</h2>
+            <p class="map-deck">
+              每个色块对应一个邮政编码区域。悬停或点选时，会显示该区域在边界数据中附带的地名（邮局常用名+ 行政区），便于和日常说的街区对照；该名称是近似参考，不等同于官方邻里边界。颜色越偏绿表示综合环境分越高；筛选后未达条件的区域会淡化。
+            </p>
+          </div>
+          <div id="map"></div>
+          <div class="map-legend" role="img" aria-label="地图颜色图例">
+            <span class="legend-title">综合分（示意）</span>
+            <div class="legend-bar">
+              <span class="l l1"></span><span class="l l2"></span><span class="l l3"></span><span class="l l4"></span>
+            </div>
+            <div class="legend-labels"><span>较低</span><span>较高</span></div>
+          </div>
+        </div>
+        <div class="panel radar-panel">
+          <div class="radar-head">
+            <h2 id="radarTitle">区域环境画像</h2>
+            <p class="radar-deck">
+              三个轴分别对应空气、安静度与绿荫；图形越饱满表示该邮政编码区域在三个维度上越均衡或整体偏高。
+            </p>
+          </div>
+          <div class="radar-svg-wrap">
+            <svg id="radar" width="420" height="360" viewBox="0 0 420 360"></svg>
+          </div>
+          <div id="meta" class="meta-card" aria-live="polite"></div>
+        </div>
+      </main>
+
+      <section class="panel insights" id="section-findings">
+        <h2>5. 数据速览</h2>
+        <p class="insights-lead">
+          下面是当前载入数据的全局摘要，具体街区请结合地图颜色与右侧雷达细读。
+        </p>
+        <div id="kpiRow" class="kpi-row">
+          <div class="kpi"><span>已覆盖邮政编码区域数量</span><strong id="kpiZipCount">-</strong></div>
+          <div class="kpi"><span>综合分全市均值</span><strong id="kpiAvg">-</strong></div>
+          <div class="kpi kpi--high"><span>综合分最高</span><strong id="kpiBest">-</strong></div>
+          <div class="kpi kpi--low"><span>综合分最低</span><strong id="kpiWorst">-</strong></div>
+        </div>
+        <ul id="insightList" class="insight-list"></ul>
+        <aside class="doc-footer-card" aria-label="说明文档再次入口">
+          <p class="hint doc-link-hint doc-link-hint--card">
+            <strong>提交材料 / 说明文档：</strong>项目说明、设计依据、外部资源与开发过程概述见
+            <a href="./submission.html">《说明文档》</a>（与页首入口相同）。
+          </p>
+        </aside>
+      </section>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>

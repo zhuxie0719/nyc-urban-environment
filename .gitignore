@@ -1,0 +1,8 @@
+# 原始数据集体积常超过 GitHub 100MB 限制，仅在本机保留；仓库只保留清洗后的产物
+/NYC311data.csv
+/new_york_tree_census_1995.csv
+/Air_Quality.csv
+
+**/__pycache__/
+*.pyc
+*.pyo
