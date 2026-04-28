@@ -2,6 +2,7 @@
 
 const ZIP_GEOJSON_PATH = "./data/nyc_zip_boundaries.geojson";
 const ENV_DATA_PATH = "./output/final_data.environment.json";
+const SCORE4_CSV_PATH = "./output/score4.csv";
 
 const state = {
   map: null,
@@ -11,7 +12,14 @@ const state = {
   suppressNextMapClick: false,
   envRecords: [],
   envByZip: new Map(),
+  score4ByZip: new Map(),
   threshold: 30,
+  facilityOpacity: 0.85,
+  facilityLayers: {
+    cooling: { enabled: false, loaded: false, layer: null },
+    restrooms: { enabled: true, loaded: false, layer: null },
+    fountains: { enabled: false, loaded: false, layer: null },
+  },
   checks: {
     air: false,
     noise: false,
@@ -23,12 +31,18 @@ init();
 
 async function init() {
   wireControls();
-  const [zipGeojson, envRecords] = await Promise.all([d3.json(ZIP_GEOJSON_PATH), d3.json(ENV_DATA_PATH)]);
+  const [zipGeojson, envRecords, score4Rows] = await Promise.all([
+    d3.json(ZIP_GEOJSON_PATH),
+    d3.json(ENV_DATA_PATH),
+    d3.csv(SCORE4_CSV_PATH),
+  ]);
   state.envRecords = envRecords || [];
   indexEnvironmentData(envRecords);
+  indexScore4(score4Rows || []);
   renderInsights();
   joinEnvironmentToGeojson(zipGeojson);
   initMap(zipGeojson);
+  syncFacilityLayers();
   drawRadarPlaceholder();
 }
 
@@ -38,6 +52,14 @@ function wireControls() {
   const airCheck = document.getElementById("airCheck");
   const noiseCheck = document.getElementById("noiseCheck");
   const greenCheck = document.getElementById("greenCheck");
+  const layerOpacityRange = document.getElementById("layerOpacityRange");
+  const layerOpacityLabel = document.getElementById("layerOpacityLabel");
+  const presetBalanced = document.getElementById("presetBalanced");
+  const presetQuiet = document.getElementById("presetQuiet");
+  const presetFacilities = document.getElementById("presetFacilities");
+  const layerCooling = document.getElementById("layerCooling");
+  const layerRestrooms = document.getElementById("layerRestrooms");
+  const layerFountains = document.getElementById("layerFountains");
 
   scoreRange.addEventListener("input", () => {
     state.threshold = Number(scoreRange.value);
@@ -57,6 +79,62 @@ function wireControls() {
     state.checks.green = greenCheck.checked;
     applyFilters();
   });
+
+  layerOpacityRange.addEventListener("input", () => {
+    const v = Number(layerOpacityRange.value);
+    state.facilityOpacity = v / 100;
+    layerOpacityLabel.textContent = `${v}%`;
+    refreshFacilityLayerStyle();
+  });
+
+  function setPreset(name) {
+    for (const el of [presetBalanced, presetQuiet, presetFacilities]) el.classList.remove("is-active");
+    if (name === "balanced") {
+      presetBalanced.classList.add("is-active");
+      airCheck.checked = false;
+      noiseCheck.checked = false;
+      greenCheck.checked = false;
+      state.checks = { air: false, noise: false, green: false };
+      applyFilters();
+    }
+    if (name === "quiet") {
+      presetQuiet.classList.add("is-active");
+      noiseCheck.checked = true;
+      state.checks.noise = true;
+      applyFilters();
+    }
+    if (name === "fac") {
+      presetFacilities.classList.add("is-active");
+      layerRestrooms.checked = true;
+      layerFountains.checked = true;
+      state.facilityLayers.restrooms.enabled = true;
+      state.facilityLayers.fountains.enabled = true;
+      syncFacilityLayers();
+    }
+  }
+
+  presetBalanced.addEventListener("click", () => setPreset("balanced"));
+  presetQuiet.addEventListener("click", () => setPreset("quiet"));
+  presetFacilities.addEventListener("click", () => setPreset("fac"));
+  setPreset("balanced");
+
+  layerCooling.addEventListener("change", () => {
+    state.facilityLayers.cooling.enabled = layerCooling.checked;
+    syncFacilityLayers();
+  });
+  layerRestrooms.addEventListener("change", () => {
+    state.facilityLayers.restrooms.enabled = layerRestrooms.checked;
+    syncFacilityLayers();
+  });
+  layerFountains.addEventListener("change", () => {
+    state.facilityLayers.fountains.enabled = layerFountains.checked;
+    syncFacilityLayers();
+  });
+
+  // 与默认状态同步：默认勾选公厕并加载对应图层
+  layerCooling.checked = state.facilityLayers.cooling.enabled;
+  layerRestrooms.checked = state.facilityLayers.restrooms.enabled;
+  layerFountains.checked = state.facilityLayers.fountains.enabled;
 }
 
 function indexEnvironmentData(records) {
@@ -65,15 +143,28 @@ function indexEnvironmentData(records) {
   }
 }
 
+function indexScore4(rows) {
+  for (const r of rows) {
+    const z = String(r.zipcode || r.zip_code || r.ZIP || "").match(/\d{5}/);
+    if (!z) continue;
+    state.score4ByZip.set(z[0], {
+      environment_score: Number(r.environment_score),
+      facility_score: Number(r.facility_score),
+    });
+  }
+}
+
 function joinEnvironmentToGeojson(geojson) {
   for (const feature of geojson.features) {
     const zip = getFeatureZip(feature.properties);
     const env = state.envByZip.get(zip);
+    const s4 = state.score4ByZip.get(zip);
     if (!env) {
       feature.properties.environment_score = 50;
       feature.properties.air_quality_score = 50;
       feature.properties.noise_score = 50;
       feature.properties.green_score = 50;
+      feature.properties.facility_score = s4 ? Number(s4.facility_score || 50) : 50;
       feature.properties.has_data = 0;
       continue;
     }
@@ -81,6 +172,7 @@ function joinEnvironmentToGeojson(geojson) {
     feature.properties.air_quality_score = env.air_quality_score;
     feature.properties.noise_score = env.noise_score;
     feature.properties.green_score = env.green_score;
+    feature.properties.facility_score = s4 ? Number(s4.facility_score || 50) : 50;
     feature.properties.has_data = 1;
   }
 }
@@ -122,11 +214,7 @@ function initMap(geojson) {
     zoomControl: true,
   });
   state.map = map;
-
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  }).addTo(map);
+  // 去掉底图瓦片：只展示数据图层（更像“专题图/作业图”）
 
   renderZipLayer(geojson);
   map.on("click", () => {
@@ -234,10 +322,11 @@ function passFilters(p) {
 }
 
 function getScoreColor(score) {
-  if (score >= 75) return "#16a34a";
-  if (score >= 50) return "#84cc16";
-  if (score >= 25) return "#f59e0b";
-  return "#ef4444";
+  // 8 色连续色带（低→高）
+  const palette = ["#fc757b", "#f97f5f", "#faa26f", "#fdcd94", "#fee199", "#b0d6a9", "#65bdba", "#3c98c9"];
+  const s = Math.max(0, Math.min(100, Number(score) || 0));
+  const idx = Math.min(palette.length - 1, Math.floor((s / 100) * palette.length));
+  return palette[idx];
 }
 
 function toggleLayerLock(layer) {
@@ -254,8 +343,11 @@ function toggleLayerLock(layer) {
   state.lockedZip = zip;
   const placeLocked = getPlaceLabelFromProps(layer.feature.properties);
   drawRadarByFeature(layer.feature, { locked: true });
-  document.getElementById("selectionHint").innerHTML =
-    `<strong>操作提示：</strong>当前已固定 <strong>ZIP ${escapeHtml(zip)}</strong>${placeLocked ? ` <span class="hint-place">（${escapeHtml(placeLocked)}）</span>` : ""}。再次单击同一区块，或点击地图空白处，即可取消固定并恢复悬停预览。`;
+  const hintEl = document.getElementById("selectionHint");
+  if (hintEl) {
+    hintEl.innerHTML =
+      `<strong>操作提示：</strong>当前已固定 <strong>ZIP ${escapeHtml(zip)}</strong>${placeLocked ? ` <span class="hint-place">（${escapeHtml(placeLocked)}）</span>` : ""}。再次单击同一区块，或点击地图空白处，即可取消固定并恢复悬停预览。`;
+  }
   applyLockedStyle();
 }
 
@@ -263,8 +355,11 @@ function clearLockedSelection() {
   if (!state.lockedLayer) return;
   state.lockedLayer = null;
   state.lockedZip = null;
-  document.getElementById("selectionHint").innerHTML =
-    "<strong>操作提示：</strong>在地图上移动鼠标可预览某一 ZIP 的雷达图；单击区块可「固定」该区域并加粗描边，再次单击同一区块或点击地图空白处即可取消。";
+  const hintEl = document.getElementById("selectionHint");
+  if (hintEl) {
+    hintEl.innerHTML =
+      "<strong>操作提示：</strong>在地图上移动鼠标可预览某一 ZIP 的雷达图；单击区块可「固定」该区域并加粗描边，再次单击同一区块或点击地图空白处即可取消。";
+  }
   applyFilters();
   document.getElementById("radarTitle").textContent = "ZIP 环境画像（悬停地图上的区域）";
   drawRadarPlaceholder();
@@ -287,6 +382,93 @@ function applyLockedStyle() {
   if (typeof state.lockedLayer.bringToFront === "function") {
     state.lockedLayer.bringToFront();
   }
+}
+
+async function syncFacilityLayers() {
+  if (!state.map) return;
+  await ensureFacilityLayer("cooling", "h2bn-gu9k", "#3c98c9");
+  await ensureFacilityLayer("restrooms", "i7jb-7jku", "#fc757b");
+  await ensureFacilityLayer("fountains", "qnv7-p7a2", "#65bdba");
+
+  for (const [k, meta] of Object.entries(state.facilityLayers)) {
+    if (!meta.layer) continue;
+    if (meta.enabled) {
+      if (!state.map.hasLayer(meta.layer)) meta.layer.addTo(state.map);
+    } else {
+      if (state.map.hasLayer(meta.layer)) state.map.removeLayer(meta.layer);
+    }
+  }
+}
+
+async function ensureFacilityLayer(key, datasetId, color) {
+  const meta = state.facilityLayers[key];
+  if (!meta) return;
+  if (meta.loaded) return;
+  if (!meta.enabled) return;
+
+  const rows = await fetchSocrataAll(datasetId);
+  const group = L.layerGroup();
+  for (const r of rows) {
+    const pt = extractLonLat(r);
+    if (!pt) continue;
+    const [lon, lat] = pt;
+    const m = L.circleMarker([lat, lon], {
+      radius: 3,
+      color: "rgba(255,255,255,0.8)",
+      weight: 1,
+      fillColor: color,
+      fillOpacity: state.facilityOpacity,
+    });
+    const name = r.propertyname || r.name || r.site_name || r.location_name || "";
+    const boro = r.borough || "";
+    m.bindPopup(`<strong>${escapeHtml(String(name || "设施点位"))}</strong><div>${escapeHtml(String(boro))}</div>`);
+    m.addTo(group);
+  }
+  meta.layer = group;
+  meta.loaded = true;
+}
+
+function refreshFacilityLayerStyle() {
+  for (const meta of Object.values(state.facilityLayers)) {
+    if (!meta.layer) continue;
+    if (typeof meta.layer.eachLayer !== "function") continue;
+    meta.layer.eachLayer((m) => {
+      if (m && typeof m.setStyle === "function") {
+        m.setStyle({ fillOpacity: state.facilityOpacity });
+      }
+    });
+  }
+}
+
+async function fetchSocrataAll(datasetId) {
+  const base = `https://data.cityofnewyork.us/resource/${datasetId}.json`;
+  const limit = 50000;
+  let offset = 0;
+  const out = [];
+  while (true) {
+    const url = `${base}?%24limit=${limit}&%24offset=${offset}`;
+    const resp = await fetch(url);
+    if (!resp.ok) break;
+    const chunk = await resp.json();
+    if (!chunk || chunk.length === 0) break;
+    out.push(...chunk);
+    if (chunk.length < limit) break;
+    offset += limit;
+  }
+  return out;
+}
+
+function extractLonLat(row) {
+  const lon = Number(row.longitude ?? row.x);
+  const lat = Number(row.latitude ?? row.y);
+  if (Number.isFinite(lon) && Number.isFinite(lat) && lon < -70 && lon > -80 && lat > 39 && lat < 43) return [lon, lat];
+  const loc = row.location || row.the_geom || row.geom;
+  if (loc && typeof loc === "object" && Array.isArray(loc.coordinates) && loc.coordinates.length >= 2) {
+    const lon2 = Number(loc.coordinates[0]);
+    const lat2 = Number(loc.coordinates[1]);
+    if (Number.isFinite(lon2) && Number.isFinite(lat2)) return [lon2, lat2];
+  }
+  return null;
 }
 
 function renderInsights() {
