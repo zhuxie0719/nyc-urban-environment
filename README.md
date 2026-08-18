@@ -1,8 +1,8 @@
 # NYC Urban Environment
 
 纽约城市环境宜居度交互可视化：按 ZIP Code 聚合空气质量、噪音与绿化指标，叠加公共设施图层，辅助选区对比。
-
-在线页面可直接打开仓库中的 `docs/index.html`（适合部署到 GitHub Pages）。
+github pages
+https://zolaxiang-11.github.io/nyc_finalwork/
 
 ## 项目简介
 
